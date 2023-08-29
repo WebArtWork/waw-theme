@@ -134,6 +134,7 @@ module.exports = async function (waw) {
 		}
 		for (let i = templateJson.variablesInfo?.length; i >= 0; i--) {
 			if (
+				themes[i].variablesInfo &&
 				variableExists.indexOf(templateJson.variablesInfo[i]?.variable) === -1
 			) {
 				themes[i].variablesInfo.splice(i, 1);
