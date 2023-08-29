@@ -86,36 +86,46 @@ module.exports = async function (waw) {
 		}
 	}
 
-	for (const theme of themes) {
-		const templateJson =
-			waw.readJson(
-				path.join(
-					process.cwd(),
-					"templates",
-					theme.folder,
-					"template.json"
-				)
-			) || {};
-		theme.variables = templateJson.variables || {};
-		theme.markModified("variables");
-		if (!theme.variablesInfo || !theme.variablesInfo.length) {
-			theme.variablesInfo = templateJson.variablesInfo || [];
+	for (let i = themes.length - 1; i >= 0; i--) {
+		const templateJsonPath = path.join(
+			process.cwd(),
+			"templates",
+			themes[i].folder,
+			"template.json"
+		)
+		if (!fs.existsSync(templateJsonPath)) {
+			fs.rmSync(path.join(
+				process.cwd(),
+				"templates",
+				themes[i].folder
+			))
+			await await waw.Theme.deleteOne({
+				_id: themes[i]._id
+			});
+			themes.splice(i, 1);
+			continue;
+		}
+		const templateJson = waw.readJson(templateJsonPath) || {};
+		themes[i].variables = templateJson.variables || {};
+		themes[i].markModified("variables");
+		if (!themes[i].variablesInfo || !themes[i].variablesInfo.length) {
+			themes[i].variablesInfo = templateJson.variablesInfo || [];
 		}
 		const variableExists = [];
-		for (const variable in theme.variables) {
+		for (const variable in themes[i].variables) {
 			variableExists.push(variable);
 			if (
-				theme.variablesInfo.map((v) => v.variable).indexOf(variable) ===
+				themes[i].variablesInfo.map((v) => v.variable).indexOf(variable) ===
 				-1
 			) {
 				variableInfo = templateJson.variablesInfo
 					? templateJson.variablesInfo[
-							templateJson.variablesInfo
-								.map((v) => v.variable)
-								.indexOf(variable)
-					  ] || {}
+					templateJson.variablesInfo
+						.map((v) => v.variable)
+						.indexOf(variable)
+					] || {}
 					: {};
-				theme.variablesInfo.push({
+				themes[i].variablesInfo.push({
 					variable,
 					description: variableInfo.description || "",
 					thumb: variableInfo.thumb || ""
@@ -126,11 +136,11 @@ module.exports = async function (waw) {
 			if (
 				variableExists.indexOf(templateJson.variablesInfo[i]?.variable) === -1
 			) {
-				theme.variablesInfo.splice(i, 1);
+				themes[i].variablesInfo.splice(i, 1);
 			}
 		}
-		theme.markModified("variablesInfo");
-		await theme.save();
+		themes[i].markModified("variablesInfo");
+		await themes[i].save();
 	}
 
 	waw.crud("theme", {

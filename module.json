@@ -1,5 +1,4 @@
 {
-	"repo" : "git@github.com:WebArtWork/waw-theme.git",
     "name": "Theme",
     "router": "schema.js index.js",
     "crud": {
