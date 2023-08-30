@@ -94,17 +94,59 @@ module.exports = async function (waw) {
 			"template.json"
 		)
 		if (!fs.existsSync(templateJsonPath)) {
-			fs.rmSync(path.join(
+			const folder = path.join(
 				process.cwd(),
 				"templates",
 				themes[i].folder
-			))
+			)
+			if (fs.existsSync(folder)) {
+				fs.rmSync(folder)
+			}
 			await await waw.Theme.deleteOne({
 				_id: themes[i]._id
 			});
 			themes.splice(i, 1);
 			continue;
 		}
+		const templateJson = waw.readJson(templateJsonPath) || {};
+		themes[i].variables = templateJson.variables || {};
+		themes[i].markModified("variables");
+		if (!themes[i].variablesInfo || !themes[i].variablesInfo.length) {
+			themes[i].variablesInfo = templateJson.variablesInfo || [];
+		}
+		const variableExists = [];
+		for (const variable in themes[i].variables) {
+			variableExists.push(variable);
+			if (
+				themes[i].variablesInfo.map((v) => v.variable).indexOf(variable) ===
+				-1
+			) {
+				variableInfo = templateJson.variablesInfo
+					? templateJson.variablesInfo[
+					templateJson.variablesInfo
+						.map((v) => v.variable)
+						.indexOf(variable)
+					] || {}
+					: {};
+				themes[i].variablesInfo.push({
+					variable,
+					description: variableInfo.description || "",
+					thumb: variableInfo.thumb || ""
+				});
+			}
+		}
+		for (let i = templateJson.variablesInfo?.length; i >= 0; i--) {
+			if (
+				themes[i] &&
+				themes[i].variablesInfo &&
+				variableExists.indexOf(templateJson.variablesInfo[i]?.variable) === -1
+			) {
+				themes[i].variablesInfo.splice(i, 1);
+			}
+		}
+		themes[i].markModified("variablesInfo");
+		await themes[i].save();
+	}
 		const templateJson = waw.readJson(templateJsonPath) || {};
 		themes[i].variables = templateJson.variables || {};
 		themes[i].markModified("variables");
