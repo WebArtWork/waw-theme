@@ -4,7 +4,7 @@ module.exports = async function (waw) {
 		folder: String,
 		name: String,
 		description: String,
-		thumbs: [String],
+		thumb: String,
 		variables: {},
 		variablesInfo: [{
 			variable: String,
