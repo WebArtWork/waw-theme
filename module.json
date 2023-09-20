@@ -1,6 +1,5 @@
 {
     "name": "Theme",
-    "router": "schema.js index.js",
     "crud": {
 		"update": {
 			"keys": ["name", "description", "thumb", "variablesInfo"]
