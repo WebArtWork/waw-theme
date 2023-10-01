@@ -1,11 +1,18 @@
 {
 	"repo": "git@github.com:WebArtWork/waw-theme.git",
-    "name": "Theme",
-    "crud": {
+	"name": "Theme",
+	"crud": {
 		"update": {
-			"keys": ["name", "description", "thumb", "variablesInfo"]
+			"keys": [
+				"name",
+				"description",
+				"thumb",
+				"variablesInfo"
+			]
 		},
-		"delete": [""]
+		"delete": [
+			""
+		]
 	},
-    "dependencies": {}
+	"dependencies": {}
 }
