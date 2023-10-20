@@ -100,7 +100,7 @@ module.exports = async function (waw) {
 				themes[i].folder
 			)
 			if (fs.existsSync(folder)) {
-				fs.rmSync(folder)
+				fs.rmSync(folder, { recursive: true});
 			}
 			await await waw.Theme.deleteOne({
 				_id: themes[i]._id
@@ -147,7 +147,7 @@ module.exports = async function (waw) {
 		themes[i].markModified("variablesInfo");
 		await themes[i].save();
 	}
-	
+
 	waw.crud("theme", {
 		get: {
 			ensure: waw.next,
