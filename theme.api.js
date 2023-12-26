@@ -3,6 +3,53 @@ const path = require("path");
 const template = path.join(process.cwd(), "template");
 
 module.exports = async function (waw) {
+	waw.mergeVariables = (from, to) => {
+		from = from || {};
+		to = to || {};
+		let update = false;
+
+		for (const variable in from) {
+			if (typeof to[variable] === 'undefined') {
+				to[variable] = from[variable];
+
+				update = true;
+			}
+		}
+
+		for (const variable in to) {
+			if (typeof from[variable] === 'undefined') {
+				delete to[variable];
+
+				update = true;
+			}
+		}
+
+		return update ? to : false;
+	}
+
+	waw.processJson = async (jsons, store, fillJson, req) => {
+		if (typeof jsons === "string") {
+			jsons = jsons.split(" ");
+		}
+
+		if (!Array.isArray(jsons) && typeof jsons === "object") {
+			jsons = [jsons];
+		}
+
+		for (let i = 0; i < jsons.length; i++) {
+			if (typeof jsons[i] === "string") {
+				jsons[i] = {
+					path: jsons[i],
+				};
+			}
+		}
+		for (const json of jsons) {
+			if (typeof waw[json.path] === "function") {
+				await waw[json.path](store, fillJson, req);
+			}
+		}
+	};
+
 	waw.themes = async (query = {}, limit, count = false) => {
 		let exe = count ? waw.Theme.countDocuments(query) : waw.Theme.find(query);
 
@@ -34,6 +81,8 @@ module.exports = async function (waw) {
 	};
 
 	const themes = await waw.themes();
+
+
 
 	const directories = waw.getDirectories(
 		path.join(process.cwd(), "templates")
