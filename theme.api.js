@@ -1,15 +1,19 @@
 const fs = require("fs");
 const path = require("path");
-const template = path.join(process.cwd(), "template");
+const ignore = `# Ignore everything in this directory
+*
+# Except this file
+!.gitignore
+`;
 
 module.exports = async function (waw) {
 	waw.mergeVariables = (from, to) => {
+		let update = to ? false : true;
 		from = from || {};
 		to = to || {};
-		let update = false;
 
 		for (const variable in from) {
-			if (typeof to[variable] === 'undefined') {
+			if (typeof to[variable] === "undefined") {
 				to[variable] = from[variable];
 
 				update = true;
@@ -17,7 +21,7 @@ module.exports = async function (waw) {
 		}
 
 		for (const variable in to) {
-			if (typeof from[variable] === 'undefined') {
+			if (typeof from[variable] === "undefined") {
 				delete to[variable];
 
 				update = true;
@@ -25,9 +29,23 @@ module.exports = async function (waw) {
 		}
 
 		return update ? to : false;
-	}
+	};
 
-	waw.processJson = async (jsons, store, fillJson, req) => {
+	const _jsons = {};
+	const _jsonsDescription = {};
+	waw.addJson = (name, callback, description) => {
+		if (name.includes(" ")) {
+			console.error("name should be without spaces");
+		} else if (_jsons[name]) {
+			console.error(
+				"You are trying to reconfigure json which already exists"
+			);
+		} else if (typeof name === "string" && typeof callback === "function") {
+			_jsons[name] = callback;
+			_jsonsDescription[name] = description;
+		}
+	};
+	waw.processJson = async (jsons, storeOperatorOrApp, fillJson, req) => {
 		if (typeof jsons === "string") {
 			jsons = jsons.split(" ");
 		}
@@ -44,14 +62,22 @@ module.exports = async function (waw) {
 			}
 		}
 		for (const json of jsons) {
+			if (typeof _jsons[json.path] === "function") {
+				await _jsons[json.path](storeOperatorOrApp, fillJson, req);
+			}
+		}
+		// remove below after fixes
+		for (const json of jsons) {
 			if (typeof waw[json.path] === "function") {
-				await waw[json.path](store, fillJson, req);
+				await waw[json.path](storeOperatorOrApp, fillJson, req);
 			}
 		}
 	};
 
 	waw.themes = async (query = {}, limit, count = false) => {
-		let exe = count ? waw.Theme.countDocuments(query) : waw.Theme.find(query);
+		let exe = count
+			? waw.Theme.countDocuments(query)
+			: waw.Theme.find(query);
 
 		if (limit) {
 			exe = exe.limit(limit);
@@ -64,137 +90,65 @@ module.exports = async function (waw) {
 		return await waw.Theme.findOne(query);
 	};
 
-	const reserved = [];
-	waw.reserve = (name) => {
-		name = name.toLowerCase();
-		if (reserved.indexOf(name) === -1) {
-			reserved.push(name);
-			return true;
-		} else {
-			return false;
+	const template = async (_folder) => {
+		console.log("template: " + _folder + "." + waw.config.land);
+		const _template = path.join(process.cwd(), "themes", _folder);
+		const templateJson = waw.readJson(
+			path.join(_template, "template.json")
+		);
+		const pages = waw.getDirectories(path.join(_template, "pages"));
+		const page = {};
+		for (const pagePath of pages) {
+			const _page = path.basename(pagePath);
+			page["/" + _page] = async (req, res) => {
+				res.send(
+					waw.render(
+						path.join(_template, "dist", _page + ".html"),
+						{
+							...templateJson,
+							...waw.readJson(
+								path.join(
+									_template,
+									"pages",
+									_page,
+									"page.json"
+								)
+							),
+						},
+						waw.translate(req)
+					)
+				);
+			};
 		}
+		waw.api({
+			domain: _folder + "." + waw.config.land,
+			template: {
+				path: _template,
+				prefix: templateJson.prefix,
+				pages: pages.map((p) => path.basename(p)),
+			},
+			page,
+		});
 	};
-	waw.reserved = (name) => {
-		if (!name) return false;
-		name = name.toLowerCase();
-		return reserved.indexOf(name) !== -1;
+
+	const app = async (_folder) => {
+		console.log("app: " + _folder + "." + waw.config.land);
+
+		waw.api({
+			domain: _folder + "." + waw.config.land,
+			app: path.join(process.cwd(), "themes", _folder, "dist", "app"),
+		});
 	};
 
 	const themes = await waw.themes();
-
-
-
-	const directories = waw.getDirectories(
-		path.join(process.cwd(), "templates")
-	);
-
-	waw.reserve("themes." + waw.config.land);
-
-	const theme = async (_folder, _template) => {
-		console.log("theme: " + _folder + "." + waw.config.land);
-		waw.reserve(_folder + "." + waw.config.land);
-		waw.serve(_template, {
-			host: _folder + "." + waw.config.land,
-			prefix: "/" + _folder,
-		});
-		for (const folder of waw.config.theme_pages || ["index"]) {
-			if (!fs.existsSync(path.join(_template, "pages", folder))) {
-				continue;
-			}
-
-			waw.build(_template, folder);
-
-			waw.url(
-				path.join(_template, "dist", folder + ".html"),
-				"/" + (folder === "index" ? "" : folder),
-				{
-					...waw.readJson(path.join(_template, "template.json")),
-					...waw.readJson(
-						path.join(_template, "pages", folder, "page.json")
-					),
-				},
-				_folder + "." + waw.config.land
-			);
-		}
-	};
-
-	for (const template of directories) {
-		const folder = path.basename(template);
-
-		if (!themes.find((t) => t.folder === folder)) {
-			const theme = await waw.Theme.create({
-				name: folder,
-				folder,
-			});
-
-			themes.push(theme);
-		}
-
-		if (waw.config.production) {
-			theme(folder, path.join(process.cwd(), "templates", folder));
-		}
-	}
-
-	for (let i = themes.length - 1; i >= 0; i--) {
-		const templateJsonPath = path.join(
-			process.cwd(),
-			"templates",
-			themes[i].folder,
-			"template.json"
-		)
-		if (!fs.existsSync(templateJsonPath)) {
-			const folder = path.join(
-				process.cwd(),
-				"templates",
-				themes[i].folder
-			)
-			if (fs.existsSync(folder)) {
-				fs.rmSync(folder, { recursive: true});
-			}
-			await await waw.Theme.deleteOne({
-				_id: themes[i]._id
-			});
-			themes.splice(i, 1);
-			continue;
-		}
-		const templateJson = waw.readJson(templateJsonPath) || {};
-		themes[i].variables = templateJson.variables || {};
-		themes[i].markModified("variables");
-		if (!themes[i].variablesInfo || !themes[i].variablesInfo.length) {
-			themes[i].variablesInfo = templateJson.variablesInfo || [];
-		}
-		const variableExists = [];
-		for (const variable in themes[i].variables) {
-			variableExists.push(variable);
-			if (
-				themes[i].variablesInfo.map((v) => v.variable).indexOf(variable) ===
-				-1
-			) {
-				variableInfo = templateJson.variablesInfo
-					? templateJson.variablesInfo[
-					templateJson.variablesInfo
-						.map((v) => v.variable)
-						.indexOf(variable)
-					] || {}
-					: {};
-				themes[i].variablesInfo.push({
-					variable,
-					description: variableInfo.description || "",
-					thumb: variableInfo.thumb || ""
-				});
+	for (const thm of themes) {
+		if (thm.folder && thm.repoFiles) {
+			if (thm.module === "store" || thm.module === "operator") {
+				template(thm.folder);
+			} else {
+				app(thm.folder);
 			}
 		}
-		for (let i = templateJson.variablesInfo?.length; i >= 0; i--) {
-			if (
-				themes[i] &&
-				themes[i].variablesInfo &&
-				variableExists.indexOf(templateJson.variablesInfo[i]?.variable) === -1
-			) {
-				themes[i].variablesInfo.splice(i, 1);
-			}
-		}
-		themes[i].markModified("variablesInfo");
-		await themes[i].save();
 	}
 
 	waw.crud("theme", {
@@ -204,6 +158,12 @@ module.exports = async function (waw) {
 				return {};
 			},
 		},
+		create: {
+			ensure: waw.role("admin"),
+		},
+		delete: {
+			ensure: waw.role("admin"),
+		},
 		update: {
 			ensure: waw.role("admin"),
 			query: (req) => {
@@ -212,24 +172,218 @@ module.exports = async function (waw) {
 				};
 			},
 		},
-		create: {
-			ensure: waw.block
-		},
-		delete: {
-			ensure: waw.block
-		},
 	});
-	waw.build(template, "themes");
-	waw.app.get("/themes", async (req, res) => {
-		res.send(
-			waw.render(
-				path.join(template, "dist", "themes.html"),
-				{
-					...waw.config,
-					themes
-				},
-				waw.translate(req)
-			)
-		);
+
+	const themesPath = path.join(process.cwd(), "themes");
+	if (!fs.existsSync(themesPath)) {
+		fs.mkdirSync(themesPath);
+	}
+	const ignorePath = path.join(process.cwd(), "themes", ".gitignore");
+	if (!fs.existsSync(ignorePath)) {
+		fs.writeFileSync(ignorePath, ignore, "utf8");
+	}
+
+	const _uniques = {};
+	waw.setUnique = (name, expressFunc) => {
+		if (!Array.isArray(_uniques[name])) {
+			_uniques[name] = [];
+		}
+		_uniques[name].push(expressFunc);
+	};
+	waw.unique = async (name, field, req, res, success, exists) => {
+		if (!_uniques[name]) {
+			throw "not configured unique";
+		}
+		let count = _uniques[name].length;
+		for (const expressFunc of _uniques[name]) {
+			if (!(await expressFunc(field, req, res))) {
+				count--;
+			}
+		}
+		if (count) {
+			exists();
+		} else {
+			success();
+		}
+	};
+
+	waw.setUnique("subdomain", async (folder) => {
+		return !!(await waw.Theme.count({ folder }));
+	});
+
+	await waw.wait(2000);
+	waw.api({
+		router: "/api/theme",
+		post: {
+			"/sync": async (req, res) => {
+				const theme = await waw.Theme.findOne(
+					req.user.is.admin
+						? { _id: req.body._id }
+						: { _id: req.body._id, author: req.user._id }
+				);
+				if (!theme.repo) {
+					return res.json(false);
+				}
+				const themePath = path.join(themesPath, theme.folder);
+				if (fs.existsSync(themePath)) {
+					fs.rmSync(themePath, { recursive: true });
+				}
+				fs.mkdirSync(themePath, { recursive: true });
+				waw.fetch(
+					themePath,
+					theme.repo,
+					async () => {
+						const files = waw.getFilesRecursively(themePath);
+						theme.repoFiles = files.length;
+						theme.repoSize = 0;
+						for (const file of files) {
+							theme.repoSize += fs.statSync(file).size;
+						}
+						const templateJsonPath = path.join(
+							process.cwd(),
+							"themes",
+							theme.folder,
+							"template.json"
+						);
+						if (!fs.existsSync(templateJsonPath)) {
+							const folder = path.join(
+								process.cwd(),
+								"themes",
+								theme.folder
+							);
+							if (fs.existsSync(folder)) {
+								fs.rmSync(folder, { recursive: true });
+							}
+							theme.repoFiles = null;
+							theme.repoSize = null;
+							await theme.save();
+							return res.json(false);
+						}
+						const templateJson =
+							waw.readJson(templateJsonPath) || {};
+						const variables = waw.mergeVariables(
+							templateJson.variables,
+							theme.variables
+						);
+						if (variables) {
+							theme.variables = variables;
+							theme.markModified("variables");
+						}
+						theme.variablesInfo = templateJson.variablesInfo || [];
+						theme.markModified("variablesInfo");
+						await theme.save();
+						res.json(theme);
+					},
+					theme.branch || "master"
+				);
+			},
+			"/uniquefolder": async (req, res) => {
+				waw.unique(
+					"subdomain",
+					req.body.folder,
+					req,
+					res,
+					async () => {
+						const theme = await waw.Theme.findOne(
+							req.user.is.admin
+								? { _id: req.body._id }
+								: { _id: req.body._id, author: req.user._id }
+						);
+						if (theme) {
+							if (theme.folder) {
+								const oldThemePath = path.join(
+									themesPath,
+									theme.folder
+								);
+								if (fs.existsSync(oldThemePath)) {
+									fs.rmSync(oldThemePath, {
+										recursive: true,
+									});
+								}
+							}
+							theme.folder = req.body.folder;
+							theme.repoFiles = null;
+							theme.repoSize = null;
+							await theme.save();
+							res.json(req.body.folder);
+						} else {
+							res.json(req.body.folder);
+						}
+					},
+					async () => {
+						const theme = await waw.Theme.findOne({
+							_id: req.body._id,
+						});
+						res.json(theme ? theme.folder : "");
+					}
+				);
+			},
+		},
+		get: {
+			"/jsons": (req, res) => {
+				const json = [];
+				for (const name in _jsonsDescription) {
+					json.push({
+						_id: name,
+						name: name + ": " + _jsonsDescription[name],
+					});
+				}
+				res.json(json);
+			},
+			"/pages/:folder": (req, res) => {
+				const pagesPath = path.join(
+					themesPath,
+					req.params.folder,
+					"pages"
+				);
+				if (fs.existsSync(pagesPath)) {
+					const pages = waw.getDirectories(pagesPath);
+					res.json(
+						pages.map((p) => {
+							return {
+								_id: path.basename(p),
+								name: path.basename(p),
+							};
+						})
+					);
+				} else {
+					res.json([]);
+				}
+			},
+			"/template/variables/:folder": (req, res) => {
+				const jsonPath = path.join(
+					themesPath,
+					req.params.folder,
+					"template.json"
+				);
+
+				const json = fs.existsSync(jsonPath)
+					? waw.readJson(jsonPath)
+					: {};
+
+				res.json({
+					variablesInfo: json.variablesInfo || {},
+					variables: json.variables || {},
+				});
+			},
+			"/page/variables/:folder/:page": (req, res) => {
+				const jsonPath = path.join(
+					themesPath,
+					req.params.folder,
+					"pages",
+					req.params.page,
+					"page.json"
+				);
+
+				const json = fs.existsSync(jsonPath)
+					? waw.readJson(jsonPath)
+					: {};
+
+				res.json({
+					variablesInfo: json.variablesInfo || {},
+					variables: json.variables || {},
+				});
+			},
+		},
 	});
 };

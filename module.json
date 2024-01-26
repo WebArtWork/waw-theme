@@ -8,6 +8,8 @@
 				"description",
 				"module",
 				"thumb",
+				"repo",
+				"branch",
 				"variablesInfo"
 			]
 		},
