@@ -5,32 +5,15 @@ const ignore = `# Ignore everything in this directory
 # Except this file
 !.gitignore
 `;
-
+const themesPath = path.join(process.cwd(), "themes");
+if (!fs.existsSync(themesPath)) {
+	fs.mkdirSync(themesPath);
+}
+const ignorePath = path.join(process.cwd(), "themes", ".gitignore");
+if (!fs.existsSync(ignorePath)) {
+	fs.writeFileSync(ignorePath, ignore, "utf8");
+}
 module.exports = async function (waw) {
-	waw.mergeVariables = (from, to) => {
-		let update = to ? false : true;
-		from = from || {};
-		to = to || {};
-
-		for (const variable in from) {
-			if (typeof to[variable] === "undefined") {
-				to[variable] = from[variable];
-
-				update = true;
-			}
-		}
-
-		for (const variable in to) {
-			if (typeof from[variable] === "undefined") {
-				delete to[variable];
-
-				update = true;
-			}
-		}
-
-		return update ? to : false;
-	};
-
 	const _jsons = {};
 	const _jsonsDescription = {};
 	waw.addJson = (name, callback, description) => {
@@ -161,9 +144,6 @@ module.exports = async function (waw) {
 		create: {
 			ensure: waw.role("admin"),
 		},
-		delete: {
-			ensure: waw.role("admin"),
-		},
 		update: {
 			ensure: waw.role("admin"),
 			query: (req) => {
@@ -172,16 +152,24 @@ module.exports = async function (waw) {
 				};
 			},
 		},
-	});
+		delete: {
+			ensure: waw.role("admin"),
+			query: (req) => {
+				if (req.body.folder) {
+					const folder = path.join(themesPath, req.body.folder);
 
-	const themesPath = path.join(process.cwd(), "themes");
-	if (!fs.existsSync(themesPath)) {
-		fs.mkdirSync(themesPath);
-	}
-	const ignorePath = path.join(process.cwd(), "themes", ".gitignore");
-	if (!fs.existsSync(ignorePath)) {
-		fs.writeFileSync(ignorePath, ignore, "utf8");
-	}
+					if (folder) {
+						fs.rmSync(path.join(themesPath, req.body.folder), {
+							recursive: true
+						});
+					}
+				}
+				return {
+					_id: req.body._id,
+				};
+			},
+		},
+	});
 
 	const _uniques = {};
 	waw.setUnique = (name, expressFunc) => {
@@ -259,18 +247,6 @@ module.exports = async function (waw) {
 							await theme.save();
 							return res.json(false);
 						}
-						const templateJson =
-							waw.readJson(templateJsonPath) || {};
-						const variables = waw.mergeVariables(
-							templateJson.variables,
-							theme.variables
-						);
-						if (variables) {
-							theme.variables = variables;
-							theme.markModified("variables");
-						}
-						theme.variablesInfo = templateJson.variablesInfo || [];
-						theme.markModified("variablesInfo");
 						await theme.save();
 						res.json(theme);
 					},
