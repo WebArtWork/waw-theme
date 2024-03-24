@@ -4,12 +4,15 @@
 	"crud": {
 		"update": {
 			"keys": [
+				"enabled",
+				"top",
 				"name",
 				"description",
 				"module",
 				"thumb",
 				"repo",
 				"branch",
+				"features",
 				"variablesInfo"
 			]
 		},
